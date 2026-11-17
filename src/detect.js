@@ -1,8 +1,10 @@
 /* Jaap detection engine: finds exactly N chant starts in an audio track.
  * 1. Spectral flux (SuperFlux style) + loudness rise after a pause -> onset strength curve
  * 2. Peak picking -> candidate onsets
- * 3. Dynamic programming picks exactly N candidates that are strong AND evenly paced,
- *    then a second pass adapts to gradual speed-ups / slow-downs.
+ * 3. A first, evenly-paced pass learns what one chant start sounds like (spectral fingerprint)
+ * 4. Every onset is re-scored by that fingerprint and dynamic programming picks exactly N of them,
+ *    allowing pauses / music interludes between chants (chants need not be evenly spaced),
+ *    then a final pass follows gradual speed-ups / slow-downs.
  */
 (function (root) {
   'use strict';
@@ -160,7 +162,7 @@
     const f0 = Math.floor(t0 * fps), f1 = Math.min(onset.length, Math.floor(t1 * fps));
     const seg = onset.subarray(f0, f1);
     let m = 0; for (let i = 0; i < seg.length; i++) m += seg[i]; m /= (seg.length || 1);
-    const lo = Math.max(2, Math.floor(0.6 * P0 * fps)), hi = Math.min(seg.length - 1, Math.ceil(1.15 * P0 * fps));
+    const lo = Math.max(2, Math.floor(0.4 * P0 * fps)), hi = Math.min(seg.length - 1, Math.ceil(1.2 * P0 * fps));
     let best = P0, bestV = -Infinity;
     for (let L = lo; L <= hi; L++) {
       let s = 0;
@@ -175,7 +177,19 @@
 
   function lowerBound(arr, t) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < t) lo = m + 1; else hi = m; } return lo; }
 
-  function dpSelect(c, N, Pfn, lam, gapLo, gapHi, ends) {
+  /** Expected-gap cost. x = gap / expected period. Close to 1 = cheap; much shorter = expensive;
+   *  much longer = a "rest" (music interlude, breath, pause): a flat fee plus a gentle slope,
+   *  so the singer is allowed to pause without the detector inventing chants inside the pause. */
+  function gapCostFn(lam, rest) {
+    const R = 1.4, base = Math.log(R) * Math.log(R);
+    return x => {
+      if (x <= R) { const l = Math.log(x); return lam * l * l * (x < 1 ? 1.6 : 1); }
+      // the pause fee does not grow with "steady": a steady singer can still stop for music
+      return Math.min(lam, 1) * base + rest + 0.12 * Math.log(x / R);
+    };
+  }
+
+  function dpSelect(c, N, Pfn, cost, gapLo, gapHi, ends) {
     const M = c.length;
     if (M < N) return null;
     const ts = c.map(x => x.t);
@@ -192,8 +206,7 @@
         let best = NEG, bj = -1;
         for (let j = jLo; j < i && ts[j] <= jHiT; j++) {
           if (prev[j] <= NEG) continue;
-          const lg = Math.log((ts[i] - ts[j]) / P);
-          const v = prev[j] - lam * lg * lg;
+          const v = prev[j] - cost((ts[i] - ts[j]) / P);
           if (v > best) { best = v; bj = j; }
         }
         if (bj >= 0) { cur[i] = best + c[i].s; back[k * M + i] = bj; }
@@ -234,17 +247,29 @@
     return v;
   }
 
-  function rescoreByTemplate(feat, cands, chosenIdx, P) {
-    const fps = cands.map(c => fingerprint(feat, c.t, P));
-    const L = fps[0].length, tpl = new Float32Array(L);
-    chosenIdx.forEach(i => { for (let q = 0; q < L; q++) tpl[q] += fps[i][q]; });
-    let nn = 0; for (let q = 0; q < L; q++) nn += tpl[q] * tpl[q]; nn = Math.sqrt(nn) || 1;
-    const smax = cands.reduce((a, c) => Math.max(a, c.s), 0) || 1;
-    return cands.map((c, i) => {
-      let d = 0; for (let q = 0; q < L; q++) d += fps[i][q] * tpl[q];
-      const sim = d / nn;
-      return { t: c.t, s: 0.35 * c.s / smax + 1.2 * Math.max(-0.2, sim), raw: c.s, sim };
+  function rescoreByTemplate(feat, cands, chosenIdx, P, fpCache) {
+    const fps = fpCache || cands.map(c => fingerprint(feat, c.t, P));
+    const L = fps[0].length;
+    const build = list => {
+      const tpl = new Float32Array(L);
+      list.forEach(i => { for (let q = 0; q < L; q++) tpl[q] += fps[i][q]; });
+      let nn = 0; for (let q = 0; q < L; q++) nn += tpl[q] * tpl[q]; nn = Math.sqrt(nn) || 1;
+      for (let q = 0; q < L; q++) tpl[q] /= nn;
+      return tpl;
+    };
+    const dot = (a, b) => { let d = 0; for (let q = 0; q < L; q++) d += a[q] * b[q]; return d; };
+    // robust template: average the chosen set, then keep only the 65% that look most alike and average again,
+    // so a few wrongly chosen spots (music, drums) do not blur what a chant sounds like
+    let tpl = build(chosenIdx);
+    const ranked = chosenIdx.slice().sort((a, b) => dot(fps[b], tpl) - dot(fps[a], tpl));
+    tpl = build(ranked.slice(0, Math.max(2, Math.round(ranked.length * 0.65))));
+    const smax = cands.reduce((a, c) => Math.max(a, c.raw ?? c.s), 0) || 1;
+    const out = cands.map((c, i) => {
+      const sim = dot(fps[i], tpl), raw = c.raw ?? c.s;
+      return { t: c.t, s: 0.35 * raw / smax + 1.2 * Math.max(-0.2, sim), raw, sim };
     });
+    out.fps = fps;
+    return out;
   }
 
   /** opts: {count, start, end, steadiness (0.2..3)} -> {times, conf, period} */
@@ -274,9 +299,11 @@
       startPen: t => Math.min(0.8, 2 * Math.pow((t - vStart) / P, 2)),
       endPen: t => { const r = (vEnd - t) / (0.8 * P); return r <= 0.05 ? 0.8 : Math.min(0.8, 3 * Math.pow(Math.log(r), 2)); }
     };
+    // pass 1: assume steady pacing, only to learn what one chant sounds like
+    const steadyCost = x => { const l = Math.log(x); return lam * l * l; };
     let idx = null;
     for (const [lo, hi] of [[0.35, 2.8], [0.25, 4], [0.15, 6]]) {
-      idx = dpSelect(cands, N, () => P, lam, lo, hi, ends);
+      idx = dpSelect(cands, N, () => P, steadyCost, lo, hi, ends);
       if (idx) break;
     }
     if (!idx) {
@@ -284,44 +311,53 @@
       const times = []; for (let k = 0; k < N; k++) times.push(A + k * P0);
       return { times, conf: times.map(() => 0), period: P0, fallback: true };
     }
-    // learn the chant's sound from the first pass, re-score every candidate, re-select (twice)
-    let base = cands;
-    for (let it = 0; it < 2; it++) {
-      const res = rescoreByTemplate(feat, cands, idx, P);
-      const idx2 = dpSelect(res, N, () => P, lam, 0.35, 2.8, ends) || dpSelect(res, N, () => P, lam, 0.15, 6, ends);
+    // pass 2+: score every onset by how much it sounds like a chant start, then choose N of them while
+    // allowing pauses and music interludes between chants (chants need not come at a regular interval)
+    const cost = gapCostFn(lam, 0.3);
+    const gapHi = Math.max(6, Math.min(span, 60) / P);
+    let res = null, fpc = null;
+    for (let it = 0; it < 4; it++) {
+      res = rescoreByTemplate(feat, cands, idx, P, fpc); fpc = res.fps;
+      const idx2 = dpSelect(res, N, () => P, cost, 0.5, gapHi, ends) || dpSelect(res, N, () => P, cost, 0.3, gapHi, ends);
       if (!idx2) break;
-      idx = idx2; base = res;
+      const same = idx2.every((v, k) => v === idx[k]);
+      idx = idx2;
+      if (same) break;
     }
-    cands = base;
+    if (res) cands = res;
     let times = idx.map(i => cands[i].t);
-    // second pass: let the expected gap follow the singer's tempo drift
+    const isRest = g => g > 1.5 * P;
+    // final pass: let the expected gap follow the singer's tempo drift (ignoring pauses)
     if (N >= 8) {
       const gaps = [], mids = [];
-      for (let k = 0; k < N - 1; k++) { gaps.push(times[k + 1] - times[k]); mids.push((times[k] + times[k + 1]) / 2); }
-      const sm = runningMedian(gaps, 5);
-      const Pfn = (t) => {
-        if (t <= mids[0]) return sm[0];
-        if (t >= mids[mids.length - 1]) return sm[sm.length - 1];
-        const j = lowerBound(mids, t);
-        const a = mids[j - 1], b = mids[j], u = (t - a) / (b - a);
-        return sm[j - 1] * (1 - u) + sm[j] * u;
-      };
-      const idx2 = dpSelect(cands, N, Pfn, lam, 0.35, 2.8, ends);
-      if (idx2) { idx = idx2; times = idx.map(i => cands[i].t); }
+      for (let k = 0; k < N - 1; k++) { const g = times[k + 1] - times[k]; if (!isRest(g)) { gaps.push(g); mids.push((times[k] + times[k + 1]) / 2); } }
+      if (gaps.length >= 4) {
+        const sm = runningMedian(gaps, 5);
+        const Pfn = (t) => {
+          if (t <= mids[0]) return sm[0];
+          if (t >= mids[mids.length - 1]) return sm[sm.length - 1];
+          const j = lowerBound(mids, t);
+          const a = mids[j - 1], b = mids[j], u = (t - a) / (b - a);
+          return sm[j - 1] * (1 - u) + sm[j] * u;
+        };
+        const idx2 = dpSelect(cands, N, Pfn, cost, 0.5, gapHi, ends);
+        if (idx2) { idx = idx2; times = idx.map(i => cands[i].t); }
+      }
     }
     const strengths = idx.map(i => cands[i].s);
     const med = strengths.slice().sort((a, b) => a - b)[N >> 1] || 1;
     const gapsAll = []; for (let k = 0; k < N - 1; k++) gapsAll.push(times[k + 1] - times[k]);
-    const gm = runningMedian(gapsAll, 5);
+    const regular = gapsAll.filter(g => !isRest(g)).sort((a, b) => a - b);
+    const Pm = regular[regular.length >> 1] || P;
     const conf = times.map((t, k) => {
-      let c = Math.min(1, strengths[k] / (0.55 * med));
-      const g1 = k > 0 ? gapsAll[k - 1] / gm[k - 1] : 1, g2 = k < N - 1 ? gapsAll[k] / gm[k] : 1;
-      const dev = Math.max(Math.abs(Math.log(g1)), Math.abs(Math.log(g2)));
-      if (dev > 0.3) c *= 0.5;
+      let c = Math.min(1, strengths[k] / (0.7 * med));
+      const g1 = k > 0 ? gapsAll[k - 1] : Pm, g2 = k < N - 1 ? gapsAll[k] : Pm;
+      // a too-short gap is suspicious; a long gap is just a pause
+      if (Math.min(g1, g2) < 0.7 * Pm) c *= 0.5;
       return c;
     });
-    const sorted = gapsAll.slice().sort((a, b) => a - b);
-    return { times, conf, period: sorted[sorted.length >> 1] || P };
+    const rests = gapsAll.filter(isRest).length;
+    return { times, conf, period: Pm, rests };
   }
 
   /** move each time to the strongest nearby onset peak (for tapped markers) */

@@ -178,6 +178,32 @@
       g.strokeStyle = th.thread; g.globalAlpha = 0.85; g.lineWidth = Math.max(1, W * 0.0028);
       g.beginPath(); g.arc(C, C, K.R, 0, Math.PI * 2); g.stroke(); g.globalAlpha = 1;
 
+      // flash that fires on every chant and fades over ~1.5 s
+      const chantPulse = c > 0 && !done ? Math.exp(-dt * 2.2) : 0;
+      const glowK = useAdd ? 1 : 0.55;   // softer without the medallion, so the key stays clean
+      if (st.glow && cInMala > 0) {
+        g.save();
+        if (st.backplate) { g.beginPath(); g.arc(C, C, W * 0.47, 0, 7); g.clip(); }
+        if (useAdd) g.globalCompositeOperation = 'lighter';
+        // glowing thread under the counted beads (light "fills" the mala as you chant)
+        const a0 = ang(-0.5), a1 = done && !rounds ? ang(K.nBeads - 0.5) : ang(cInMala - 0.5);
+        g.lineCap = 'round';
+        g.strokeStyle = `rgba(${th.glow},${glowK * (0.16 + 0.3 * chantPulse)})`; g.lineWidth = K.r * 2.4;
+        g.beginPath(); g.arc(C, C, K.R, a0, a1); g.stroke();
+        g.strokeStyle = `rgba(${th.glow},${glowK * (0.5 + 0.45 * chantPulse)})`; g.lineWidth = Math.max(1.2, W * 0.0038);
+        g.beginPath(); g.arc(C, C, K.R, a0, a1); g.stroke();
+        // halo rings that breathe out from the mala on every chant
+        if (chantPulse > 0.02 && st.backplate) {
+          const spread = K.r * (1.8 + 5 * easeOut(dt / 1.1));
+          g.lineWidth = K.r * 0.7 * (0.4 + chantPulse);
+          g.strokeStyle = `rgba(${th.glow},${glowK * 0.42 * chantPulse})`;
+          g.beginPath(); g.arc(C, C, K.R + spread, 0, 7); g.stroke();
+          g.strokeStyle = `rgba(${th.glow},${glowK * 0.28 * chantPulse})`;
+          g.beginPath(); g.arc(C, C, Math.max(K.r, K.R - spread), 0, 7); g.stroke();
+        }
+        g.restore();
+      }
+
       // tassel + sumeru (guru bead)
       const ma = Math.PI / 2 + rot, mx = C + Math.cos(ma) * K.R, my = C + Math.sin(ma) * K.R;
       g.save(); g.translate(mx, my); g.rotate(ma - Math.PI / 2);
@@ -195,6 +221,28 @@
       };
       const wavePos = done ? (dt / 2.2) * (K.nBeads + 10) - 5 : -100;
       const boost = i => done ? Math.exp(-Math.pow((i - wavePos) / 5, 2)) + (dt > 2.2 ? 0.25 + 0.15 * Math.sin(dt * 2.4 - i * 0.12) : 0) : 0;
+      // on every chant a wave of light runs back through all the counted beads
+      const flow = i => {
+        if (done || !st.glow || i >= cInMala - 1) return 0;
+        const d = (cInMala - 1 - i) - dt * 48;
+        return Math.exp(-d * d / 10) * Math.exp(-dt * 1.1);
+      };
+      // counted beads shimmer gently, like oil lamps
+      const twinkle = i => 0.82 + 0.18 * Math.sin(t * 1.7 + i * 2.39);
+
+      // comet: light travels from the previous bead into the new one
+      if (st.glow && !done && cInMala > 1 && dt < 0.55) {
+        if (useAdd) g.globalCompositeOperation = 'lighter';
+        const gs = K.glow.width, pa = ang(cInMala - 2), na = ang(cInMala - 1);
+        for (let s = 0; s < 7; s++) {
+          const u = easeOut(dt / 0.32 - s * 0.06); if (u <= 0) continue;
+          const a = pa + (na - pa) * u, x = C + Math.cos(a) * K.R, y = C + Math.sin(a) * K.R;
+          const sc = 0.9 - s * 0.09;
+          g.globalAlpha = glowK * (1 - s / 7) * (1 - dt / 0.55) * 0.8;
+          g.drawImage(K.glow, x - gs * sc / 2, y - gs * sc / 2, gs * sc, gs * sc);
+        }
+        g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+      }
 
       // glows
       if (st.glow) {
@@ -203,8 +251,9 @@
         for (let i = 0; i < K.nBeads; i++) {
           const a = litFrac(i); if (a <= 0) continue;
           const cur = i === cInMala - 1 && !done;
-          const amp = (useAdd ? 0.55 : 0.35) * a + boost(i) * 0.7 + (cur ? 0.6 * Math.exp(-dt * 2) + 0.35 : 0);
-          const sc = cur ? 1.5 : 1;
+          const amp = (useAdd ? 0.55 : 0.35) * a * (cur || done ? 1 : twinkle(i)) + boost(i) * 0.7 + flow(i) * 0.75 * glowK
+            + (cur ? 0.6 * Math.exp(-dt * 2) + 0.35 + 0.12 * Math.sin(t * 3) : 0);
+          const sc = cur ? 1.5 + 0.5 * chantPulse : 1 + 0.35 * flow(i);
           const x = C + Math.cos(ang(i)) * K.R, y = C + Math.sin(ang(i)) * K.R;
           g.globalAlpha = Math.min(1, amp);
           g.drawImage(K.glow, x - gs * sc / 2, y - gs * sc / 2, gs * sc, gs * sc);
@@ -216,7 +265,7 @@
       for (let i = 0; i < K.nBeads; i++) {
         const a = litFrac(i), b = boost(i);
         const cur = i === cInMala - 1 && !done;
-        const sc = (cur ? 1.18 + 0.4 * Math.exp(-dt * 6) : 1) + 0.22 * b;
+        const sc = (cur ? 1.18 + 0.4 * Math.exp(-dt * 6) : 1) + 0.22 * b + 0.12 * flow(i);
         const x = C + Math.cos(ang(i)) * K.R, y = C + Math.sin(ang(i)) * K.R, w = bs * sc;
         if (a < 1) { g.globalAlpha = 1; g.drawImage(K.off, x - w / 2, y - w / 2, w, w); }
         if (a > 0) { g.globalAlpha = a; g.drawImage(K.on, x - w / 2, y - w / 2, w, w); }
@@ -228,6 +277,23 @@
       g.drawImage(done ? K.meruOn : K.meruOff, mx - mw / 2, my - mw / 2);
 
       // ripple + sparks from the newest bead
+      // light rays from the newest bead
+      if (st.glow && cInMala > 0 && !done && dt < 1.3) {
+        const ci = cInMala - 1, x = C + Math.cos(ang(ci)) * K.R, y = C + Math.sin(ang(ci)) * K.R;
+        const ra = glowK * 0.55 * Math.exp(-dt * 2.6), len = K.r * (2.2 + 3.2 * easeOut(dt / 0.5)), wdt = K.r * 0.28;
+        if (useAdd) g.globalCompositeOperation = 'lighter';
+        g.save(); g.translate(x, y); g.rotate(ang(ci) + dt * 0.5);
+        const rg = g.createLinearGradient(0, 0, len, 0);
+        rg.addColorStop(0, `rgba(${th.glow},${ra})`); rg.addColorStop(1, `rgba(${th.glow},0)`);
+        g.fillStyle = rg;
+        for (let k = 0; k < 12; k++) {
+          const l = k % 2 ? 0.6 : 1;
+          g.beginPath(); g.moveTo(0, -wdt); g.lineTo(len * l, 0); g.lineTo(0, wdt); g.closePath(); g.fill();
+          g.rotate(Math.PI / 6);
+        }
+        g.restore(); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+      }
+
       if (cInMala > 0 && !done && dt < 0.9) {
         const ci = cInMala - 1, x = C + Math.cos(ang(ci)) * K.R, y = C + Math.sin(ang(ci)) * K.R;
         g.strokeStyle = `rgba(${th.glow},${(1 - dt / 0.9) * 0.9})`; g.lineWidth = Math.max(1, W * 0.003 * (1 - dt / 0.9));
@@ -258,6 +324,17 @@
         g.fillStyle = th.rim; g.globalAlpha = cInMala > 0 ? 1 : 0.5;
         g.beginPath(); g.moveTo(0, s * 1.1); g.quadraticCurveTo(s * 0.9, -s * 0.2, 0, -s * 1.2); g.quadraticCurveTo(-s * 0.9, -s * 0.2, 0, s * 1.1); g.fill();
         g.restore(); g.globalAlpha = 1;
+      }
+
+      // soft light behind the number that pulses with each chant
+      if (st.glow && useAdd && (chantPulse > 0.01 || done)) {
+        const ha = done ? 0.12 + 0.05 * Math.sin(dt * 2.4) : 0.2 * chantPulse;
+        const hy = W * 0.53, hr = W * (0.2 + 0.03 * (1 - chantPulse));
+        const hg = g.createRadialGradient(C, hy, 0, C, hy, hr);
+        hg.addColorStop(0, `rgba(${th.glow},${ha})`); hg.addColorStop(1, `rgba(${th.glow},0)`);
+        g.globalCompositeOperation = 'lighter'; g.fillStyle = hg;
+        g.beginPath(); g.arc(C, hy, hr, 0, 7); g.fill();
+        g.globalCompositeOperation = 'source-over';
       }
 
       // ---- centre text ----

@@ -222,7 +222,7 @@
       fitView();
       const low = r.conf.filter(c => c < 0.6).length;
       if (r.fallback) $('detNote').innerHTML = '<span style="color:#ff6b5b">Could not hear enough separate chants, so markers were spaced evenly.</span> Try <b>Tap along</b> instead.';
-      else $('detNote').innerHTML = `Found ${r.times.length} chants, about one every <b>${r.period.toFixed(2)} s</b>${low ? ` · <span style="color:#ff8a3d">${low} orange</span> worth a listen` : ' · all confident'}. Press <kbd>.</kbd> to step through.`;
+      else $('detNote').innerHTML = `Found ${r.times.length} chants, about one every <b>${r.period.toFixed(2)} s</b>${r.rests ? `, with ${r.rests} pause${r.rests > 1 ? 's' : ''} or music break${r.rests > 1 ? 's' : ''} skipped` : ''}${low ? ` · <span style="color:#ff8a3d">${low} orange</span> worth a listen` : ' · all confident'}. Press <kbd>.</kbd> to step through.`;
     } catch (e) { $('detNote').textContent = e.message; }
   }
 
@@ -399,7 +399,7 @@
     $('sBg').value = s.bg;
     document.querySelectorAll('.th').forEach(el => el.classList.toggle('on', el.dataset.k === s.theme));
     document.querySelectorAll('.sw').forEach(el => el.classList.toggle('on', el.dataset.c.toLowerCase() === s.bg.toLowerCase()));
-    $('pwrap').style.setProperty('--fsbg', s.bg);
+    $('pwrap').style.setProperty('--fsbg', s.bg); document.documentElement.style.setProperty('--fsbg', s.bg);
     $('keyNote').textContent = s.backplate ? 'Medallion on = clean keying: glows sit on the disc, so only a crisp circle edge touches the screen colour.' : 'Without the medallion, keep Glow off for the cleanest key (soft glows blend into the screen colour).';
   }
   function styleChanged() { lsSet('njc:style', S.style); syncStyleUI(); S.dirtyPreview = true; changed(); }
@@ -418,6 +418,57 @@
   bind('sPlate', 'backplate', el => el.checked); bind('sGlow', 'glow', el => el.checked); bind('sSparks', 'sparks', el => el.checked);
   bind('sBg', 'bg', el => el.value);
   syncStyleUI();
+
+  // ---------- export frame layout (square counter placed on a 16:9 / 9:16 screen-colour frame) ----------
+  const LAYOUT_DEFAULT = { frame: 'landscape', pos: 'tr', scale: 40 };
+  const LAY = Object.assign({}, LAYOUT_DEFAULT, lsGet('njc:layout', {}));
+  /** size = the "Size" choice (frame height for landscape, width for portrait). Returns frame + counter box. */
+  function layoutFor(size, L = LAY) {
+    if (L.frame === 'square') return { fw: size, fh: size, cs: size, x: 0, y: 0, safe: null };
+    const land = L.frame === 'landscape';
+    const fw = land ? Math.round(size * 16 / 9 / 2) * 2 : size, fh = land ? size : Math.round(size * 16 / 9 / 2) * 2;
+    // keep clear of the edges, the YouTube player controls (bottom) and, in portrait, the Shorts caption area
+    const mx = Math.round(fw * 0.05), mt = Math.round(fh * (land ? 0.056 : 0.08)), mb = Math.round(fh * (land ? 0.125 : 0.22));
+    let cs = Math.round(Math.min(fw, fh) * L.scale / 100 / 2) * 2;
+    cs = Math.min(cs, fh - mt - mb, fw - 2 * mx);
+    const x = L.pos === 'c' ? (fw - cs) / 2 : L.pos[1] === 'l' ? mx : fw - mx - cs;
+    const y = L.pos === 'c' ? (fh - cs) / 2 : L.pos[0] === 't' ? mt : fh - mb - cs;
+    return { fw, fh, cs, x: Math.round(x), y: Math.round(y), safe: { x: mx, y: mt, w: fw - 2 * mx, h: fh - mt - mb } };
+  }
+  /** draws one full export frame: screen colour everywhere, counter in its box */
+  function makeComposer(size) {
+    const Lo = layoutFor(size), R = Mala.createRenderer(Lo.cs);
+    const cc = Lo.fw === Lo.cs && Lo.fh === Lo.cs ? null : document.createElement('canvas');
+    let cctx = null; if (cc) { cc.width = cc.height = Lo.cs; cctx = cc.getContext('2d', { alpha: false }); }
+    return {
+      Lo, draw(ctx, t, M, st) {
+        if (!cc) { R.draw(ctx, t, M, st); return; }
+        R.draw(cctx, t, M, st);
+        ctx.fillStyle = st.bg; ctx.fillRect(0, 0, Lo.fw, Lo.fh);
+        ctx.drawImage(cc, Lo.x, Lo.y);
+      }
+    };
+  }
+  function syncLayoutUI() {
+    $('eFrame').value = LAY.frame; $('ePos').value = LAY.pos; $('eScale').value = LAY.scale; $('eScaleLbl').textContent = LAY.scale + '%';
+    const sq = LAY.frame === 'square';
+    $('layoutRows').style.display = sq ? 'none' : '';
+    const labels = { square: s => `${s} × ${s}`, landscape: s => `${Math.round(s * 16 / 9 / 2) * 2} × ${s}`, portrait: s => `${s} × ${Math.round(s * 16 / 9 / 2) * 2}` }[LAY.frame];
+    for (const o of $('eSize').options) o.textContent = labels(+o.value) + (+o.value === 2160 ? ' (4K)' : +o.value === 1080 && LAY.frame !== 'square' ? ' (Full HD)' : '');
+    if (sq) return;
+    const Lo = layoutFor(+$('eSize').value), box = $('lay');
+    const bw = LAY.frame === 'landscape' ? 128 : 54, bh = LAY.frame === 'landscape' ? 72 : 96, k = bw / Lo.fw;
+    box.style.width = bw + 'px'; box.style.height = bh + 'px';
+    Object.assign($('layDot').style, { left: Lo.x * k + 'px', top: Lo.y * k + 'px', width: Lo.cs * k + 'px', height: Lo.cs * k + 'px' });
+    Object.assign($('laySafe').style, { left: Lo.safe.x * k + 'px', top: Lo.safe.y * k + 'px', width: Lo.safe.w * k + 'px', height: Lo.safe.h * k + 'px' });
+    $('layNote').textContent = `counter ${Lo.cs} px · dashed = safe area`;
+  }
+  function layoutChanged() {
+    LAY.frame = $('eFrame').value; LAY.pos = $('ePos').value; LAY.scale = +$('eScale').value;
+    lsSet('njc:layout', LAY); syncLayoutUI();
+  }
+  for (const id of ['eFrame', 'ePos', 'eScale', 'eSize']) $(id).addEventListener('input', layoutChanged);
+  syncLayoutUI();
 
   // ---------- files ----------
   $('fileLine').onclick = () => $('fAudio').click();
@@ -453,9 +504,9 @@
     }
   }
   $('bPng').onclick = async () => {
-    const W = +$('eSize').value, c = document.createElement('canvas'); c.width = c.height = W;
+    const comp = makeComposer(+$('eSize').value), c = document.createElement('canvas'); c.width = comp.Lo.fw; c.height = comp.Lo.fh;
     await document.fonts.ready;
-    Mala.createRenderer(W).draw(c.getContext('2d'), curTime(), model(), S.style);
+    comp.draw(c.getContext('2d'), curTime(), model(), S.style);
     c.toBlob(b => download(b, baseName() + ' - counter frame.png'), 'image/png');
   };
   $('bHelp').onclick = () => $('help').style.display = 'flex';
@@ -476,8 +527,8 @@
     if (!loaded() || S.exporting) return;
     if (!('VideoEncoder' in window)) { alert('This browser cannot encode video. Please open the app in Google Chrome.'); return; }
     if (S.markers.length !== S.target && !confirm(`There are ${S.markers.length} markers but the count is set to ${S.target}. Export anyway?`)) return;
-    const W = +$('eSize').value, fps = +$('eFps').value, withAudio = $('eAudio').checked;
-    const fileName = baseName() + ' - jaap counter.mp4';
+    const comp = makeComposer(+$('eSize').value), FW = comp.Lo.fw, FH = comp.Lo.fh, fps = +$('eFps').value, withAudio = $('eAudio').checked;
+    const fileName = baseName() + ' - jaap counter' + (LAY.frame === 'square' ? '' : ' ' + FW + 'x' + FH) + '.mp4';
     let handle = null, stream = null;
     if (window.showSaveFilePicker) {
       try { handle = await window.showSaveFilePicker({ suggestedName: fileName, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] }); }
@@ -491,10 +542,11 @@
     try {
       await document.fonts.ready;
       // video codec
-      const bitrate = { 720: 5e6, 1080: 9e6, 1440: 14e6, 2160: 26e6 }[W] || 9e6;
+      // mostly flat screen colour compresses well; scale with picture area, capped
+      const bitrate = Math.round(Math.min(40e6, Math.max(4e6, 9e6 * (FW * FH) / (1080 * 1080) * (LAY.frame === 'square' ? 1 : 0.6))));
       let vcfg = null;
       for (const codec of ['avc1.640033', 'avc1.4d0033', 'avc1.640028', 'avc1.42e033', 'avc1.42001f']) {
-        const cfg = { codec, width: W, height: W, bitrate, framerate: fps, latencyMode: 'quality', avc: { format: 'avc' } };
+        const cfg = { codec, width: FW, height: FH, bitrate, framerate: fps, latencyMode: 'quality', avc: { format: 'avc' } };
         try { const r = await VideoEncoder.isConfigSupported(cfg); if (r.supported) { vcfg = cfg; break; } } catch (e) { }
       }
       if (!vcfg) throw new Error('H.264 encoding is not available at this size in this browser. Try a smaller size, or use Google Chrome.');
@@ -513,7 +565,7 @@
       const target = handle ? new Mp4Muxer.FileSystemWritableFileStreamTarget(stream = await handle.createWritable()) : new Mp4Muxer.ArrayBufferTarget();
       const muxer = new Mp4Muxer.Muxer({
         target, fastStart: handle ? false : 'in-memory', firstTimestampBehavior: 'offset',
-        video: { codec: 'avc', width: W, height: W, frameRate: fps },
+        video: { codec: 'avc', width: FW, height: FH, frameRate: fps },
         audio: acfg ? { codec: 'aac', sampleRate: 48000, numberOfChannels: acfg.numberOfChannels } : undefined
       });
       let encErr = null;
@@ -532,15 +584,15 @@
           aenc.encode(ad); ad.close(); aPos += n;
         }
       };
-      const canvas = document.createElement('canvas'); canvas.width = canvas.height = W;
+      const canvas = document.createElement('canvas'); canvas.width = FW; canvas.height = FH;
       const ctx = canvas.getContext('2d', { alpha: false });
-      const R = Mala.createRenderer(W), M = model(), st = Object.assign({}, S.style);
+      const M = model(), st = Object.assign({}, S.style);
       const frames = Math.ceil(S.duration * fps), t0 = performance.now();
       for (let f = 0; f < frames; f++) {
         if (cancelExport) throw new Error('cancelled');
         if (encErr) throw encErr;
         const t = f / fps;
-        R.draw(ctx, t, M, st);
+        comp.draw(ctx, t, M, st);
         const vf = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / fps) });
         encoder.encode(vf, { keyFrame: f % (fps * 2) === 0 }); vf.close();
         feedAudio(t + 1);
@@ -593,5 +645,5 @@
   resizeTl(); updateChip();
   if (document.fonts && document.fonts.load) { document.fonts.load('700 40px Cinzel'); document.fonts.load('40px "Tiro Devanagari Hindi"'); document.fonts.ready.then(() => S.dirtyPreview = true); }
   requestAnimationFrame(loop);
-  window.__njc = { S, loadFile, runDetect, model };
+  window.__njc = { S, loadFile, runDetect, model, makeComposer, layoutFor };
 })();

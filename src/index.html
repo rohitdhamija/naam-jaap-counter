@@ -70,6 +70,9 @@ input[type=checkbox]{accent-color:var(--saffron);width:15px;height:15px}
 .th{border:1px solid var(--line2);border-radius:8px;padding:6px 2px 5px;text-align:center;font-size:11px;color:var(--muted);cursor:pointer;background:#140c0c}
 .th.on{border-color:var(--saffron);color:var(--ink)}
 .th i{display:block;width:18px;height:18px;margin:0 auto 4px;border-radius:50%}
+.lay{position:relative;width:128px;height:72px;border:1px solid var(--line2);border-radius:5px;background:var(--fsbg,#00ff00);flex:none;overflow:hidden}
+.lay i{position:absolute;border-radius:50%;background:radial-gradient(circle at 40% 35%,#ffcf6b,#6b2a10 70%);box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.lay b{position:absolute;border:1px dashed rgba(0,0,0,.45);pointer-events:none}
 .bar{height:8px;border-radius:5px;background:#2b1b1c;overflow:hidden;margin-top:10px;display:none}
 .bar>div{height:100%;width:0;background:linear-gradient(90deg,#ffb04d,#ff7a1a)}
 .tl{border-top:1px solid var(--line);display:grid;grid-template-rows:38px 1fr;background:#140c0c;min-height:0}
@@ -145,12 +148,18 @@ kbd{font:11px ui-monospace,Menlo,monospace;background:#2b1b1c;border:1px solid v
       </div>
       <div class="step">
         <h3><b>4</b>Export</h3>
-        <div class="row"><label>Size</label><select id="eSize" class="grow"><option value="720">720 × 720</option><option value="1080" selected>1080 × 1080</option><option value="1440">1440 × 1440</option><option value="2160">2160 × 2160 (4K)</option></select></div>
+        <div class="row"><label>Frame</label><select id="eFrame" class="grow"><option value="landscape">Landscape 16:9 · for iMovie overlay</option><option value="portrait">Portrait 9:16 · Shorts / Reels</option><option value="square">Square · counter only</option></select></div>
+        <div class="row"><label>Size</label><select id="eSize" class="grow"><option value="720">720</option><option value="1080" selected>1080</option><option value="1440">1440</option><option value="2160">2160 (4K)</option></select></div>
+        <div id="layoutRows">
+          <div class="row"><label>Counter sits</label><select id="ePos" class="grow"><option value="tr">Top right</option><option value="tl">Top left</option><option value="br">Bottom right</option><option value="bl">Bottom left</option><option value="c">Centre</option></select></div>
+          <div class="row"><label>Counter size</label><input type="range" id="eScale" min="20" max="80" step="1" value="40" class="grow"><span class="note" style="margin:0;min-width:40px;text-align:right" id="eScaleLbl">40%</span></div>
+          <div class="row"><label></label><div class="lay" id="lay"><i id="layDot"></i><b id="laySafe"></b></div><span class="note" style="margin:0" id="layNote"></span></div>
+        </div>
         <div class="row"><label>Frame rate</label><select id="eFps" class="grow"><option>25</option><option selected>30</option><option>60</option></select></div>
         <div class="row"><label></label><span class="chk"><input type="checkbox" id="eAudio" checked>Include the chant audio (handy for lining up)</span></div>
         <div class="row" style="margin-top:12px"><button class="btn primary" id="bExport" disabled>⬇ Export MP4</button><button class="btn" id="bCancel" style="display:none">Cancel</button></div>
         <div class="bar" id="exBar"><div></div></div>
-        <div class="note" id="exNote">The video runs the full length of your audio, from 0:00.</div>
+        <div class="note" id="exNote">The video runs the full length of your audio, from 0:00. In iMovie: put it above your video, Video Overlay Settings → <b>Green/Blue Screen</b>.</div>
       </div>
     </aside>
   </main>
@@ -174,7 +183,7 @@ kbd{font:11px ui-monospace,Menlo,monospace;background:#2b1b1c;border:1px solid v
     <li><b>Detect chants.</b> Set how many jaaps (108) and, if there is an intro or outro, where the chanting starts and ends. The detector learns what one repetition sounds like and places exactly that many markers.</li>
     <li><b>Check the timeline.</b> Orange markers are less certain. Press <kbd>,</kbd> / <kbd>.</kbd> to hop between markers, drag to fix, double-click to add, <kbd>⌫</kbd> to delete. If a recording is tricky, use <b>Tap along</b> and press Space at every chant, then <b>Snap</b> to tighten the taps.</li>
     <li><b>Style it</b>: mantra text, mala type, Devanagari numbers, still or turning mala.</li>
-    <li><b>Export MP4</b> and drop it on a track above your video at 0:00 in Final Cut / iMovie / Premiere / DaVinci. Apply a green-screen (chroma) key, scale it down to a corner.</li>
+    <li><b>Export MP4</b> and drop it on a track above your video at 0:00 in Final Cut / iMovie / Premiere / DaVinci. Apply a green-screen (chroma) key. Choose <b>Landscape 16:9</b> (or Portrait for Shorts) and a corner before exporting, and the counter lands exactly there, with no resizing needed. In iMovie: Video Overlay Settings → <b>Green/Blue Screen</b>.</li>
   </ol>
   <p class="note">Your markers are remembered per audio file, and your style is remembered for next time. Use <b>Save project</b> to keep a copy you can reopen.</p>
   <div style="text-align:right;margin-top:14px"><button class="btn primary" id="bHelpClose">Got it</button></div>
