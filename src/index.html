@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Naam Jaap Counter Studio</title>
+<meta name="description" content="Free 108-bead mala jaap counter for chant videos. Detects every repetition in your audio and exports a green-screen MP4. Runs entirely in your browser.">
+<meta name="theme-color" content="#140b0b">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Tiro+Devanagari+Hindi&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#110a0a; --panel:#1b1112; --panel2:#231617; --line:#3a2426; --line2:#4d3033;
+  --ink:#f6eadc; --muted:#b8a296; --faint:#7d6a62; --saffron:#ff9a2e; --gold:#f2c063; --bad:#ff6b5b; --ok:#ffd27a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif}
+button,select,input{font:inherit;color:inherit}
+.app{display:grid;grid-template-rows:56px minmax(0,1fr) 220px;height:100vh}
+header{display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1d1011,#140b0b)}
+.brand{display:flex;align-items:center;gap:10px;font-family:Cinzel,Georgia,serif;font-weight:700;letter-spacing:.06em;font-size:17px;color:var(--gold)}
+.brand .om{font-family:"Tiro Devanagari Hindi","Kohinoor Devanagari",serif;font-size:26px;color:var(--saffron);line-height:1}
+.brand small{font-family:-apple-system,system-ui,sans-serif;font-weight:400;letter-spacing:0;color:var(--muted);font-size:12px;margin-left:4px}
+header .sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:#6a4144;background:#2b1b1c}
+.btn.primary{background:linear-gradient(180deg,#ffab45,#f0861c);border-color:#ffb85c;color:#2a1102;font-weight:650}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{height:27px;padding:0 9px;font-size:12.5px;border-radius:7px}
+main{display:grid;grid-template-columns:minmax(0,1fr) 384px;min-height:0}
+.stage{display:flex;flex-direction:column;min-height:0;padding:16px 18px 10px;gap:10px}
+.preview-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
+#preview{height:100%;max-width:100%;aspect-ratio:1;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5);background:#000}
+.preview-wrap.fs{background:var(--fsbg,#00ff00)}
+.preview-wrap.fs #preview{border-radius:0;box-shadow:none}
+.drop-hint{position:absolute;inset:auto 0 14px 0;text-align:center;color:var(--muted);font-size:13px;pointer-events:none}
+.transport{display:flex;align-items:center;gap:10px}
+.time{font-variant-numeric:tabular-nums;color:var(--muted);min-width:150px}
+.count-chip{margin-left:auto;font-variant-numeric:tabular-nums;padding:4px 10px;border-radius:999px;border:1px solid var(--line2);font-size:12.5px;color:var(--muted)}
+.count-chip.good{color:var(--ok);border-color:#6b5320}
+.count-chip.warn{color:var(--bad);border-color:#6b2a24}
+aside{border-left:1px solid var(--line);background:var(--panel);overflow-y:auto;min-height:0}
+.step{padding:14px 18px 16px;border-bottom:1px solid var(--line)}
+.step h3{margin:0 0 10px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);display:flex;align-items:center;gap:8px}
+.step h3 b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#3a2412;color:var(--saffron);font-size:11px;letter-spacing:0}
+.row{display:flex;align-items:center;gap:8px;margin:7px 0}
+.row label{color:var(--muted);min-width:96px;font-size:13px}
+.row .grow{flex:1;min-width:0}
+input[type=text],input[type=number],select{height:30px;border-radius:7px;border:1px solid var(--line2);background:#120b0b;padding:0 9px;width:100%}
+input[type=number]{width:84px}
+input[type=range]{width:100%;accent-color:var(--saffron)}
+input[type=checkbox]{accent-color:var(--saffron);width:15px;height:15px}
+.chk{display:flex;align-items:center;gap:7px;color:var(--ink);font-size:13px;cursor:pointer}
+.file-line{display:flex;align-items:center;gap:10px;padding:10px;border:1px dashed var(--line2);border-radius:9px;color:var(--muted);font-size:13px;cursor:pointer}
+.file-line:hover{border-color:var(--saffron)}
+.file-line .nm{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note{font-size:12.5px;color:var(--muted);margin-top:8px}
+.note.hi{color:var(--ok)}
+.note.bad{color:var(--bad)}
+.swatches{display:flex;gap:6px}
+.sw{width:26px;height:26px;border-radius:6px;border:2px solid transparent;cursor:pointer}
+.sw.on{border-color:var(--ink)}
+.themes{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.th{border:1px solid var(--line2);border-radius:8px;padding:6px 2px 5px;text-align:center;font-size:11px;color:var(--muted);cursor:pointer;background:#140c0c}
+.th.on{border-color:var(--saffron);color:var(--ink)}
+.th i{display:block;width:18px;height:18px;margin:0 auto 4px;border-radius:50%}
+.bar{height:8px;border-radius:5px;background:#2b1b1c;overflow:hidden;margin-top:10px;display:none}
+.bar>div{height:100%;width:0;background:linear-gradient(90deg,#ffb04d,#ff7a1a)}
+.tl{border-top:1px solid var(--line);display:grid;grid-template-rows:38px 1fr;background:#140c0c;min-height:0}
+.tl-bar{display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--line)}
+.tl-bar .help{margin-left:auto;color:var(--faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#tl{width:100%;height:100%;display:block;cursor:crosshair}
+.tapbanner{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgba(20,10,10,.92);border:1px solid var(--saffron);color:var(--ink);padding:10px 16px;border-radius:10px;font-size:13px;display:none;text-align:center}
+.tapbanner b{color:var(--saffron);font-size:18px;font-variant-numeric:tabular-nums}
+kbd{font:11px ui-monospace,Menlo,monospace;background:#2b1b1c;border:1px solid var(--line2);border-radius:4px;padding:1px 5px;color:var(--ink)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:10}
+.modal .card{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:22px 24px;width:min(560px,92vw);max-height:84vh;overflow:auto}
+.modal h2{margin:0 0 10px;font-family:Cinzel,Georgia,serif;color:var(--gold);font-size:18px}
+.modal li{margin:6px 0;color:var(--muted)} .modal li b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><span class="om">ॐ</span>Naam Jaap Counter <small>studio</small></div>
+    <div class="sp"></div>
+    <a class="btn ghost" href="https://www.youtube.com/@dailyjaap108" target="_blank" rel="noopener" style="text-decoration:none">▶ Naam Jaap 108</a>
+    <button class="btn ghost" id="bHelp">How it works</button>
+    <button class="btn" id="bOpenProj">Open project</button>
+    <button class="btn" id="bSaveProj" disabled>Save project</button>
+    <input type="file" id="fProj" accept=".json,application/json" hidden>
+  </header>
+  <main>
+    <section class="stage">
+      <div class="preview-wrap" id="pwrap">
+        <canvas id="preview" width="720" height="720"></canvas>
+        <div class="drop-hint" id="dropHint">Demo preview · drop your chant audio or video anywhere to begin</div>
+        <div class="tapbanner" id="tapBanner">Tap <kbd>Space</kbd> at the start of every chant &nbsp;·&nbsp; <b id="tapCount">0</b> / <span id="tapTarget">108</span> &nbsp;·&nbsp; <kbd>Esc</kbd> to stop</div>
+      </div>
+      <div class="transport">
+        <button class="btn" id="bPlay" disabled>▶ Play</button>
+        <span class="time" id="time">0:00.0 / 0:00.0</span>
+        <button class="btn sm ghost" id="bPng" title="Save this frame as a PNG (for thumbnails)">Save frame PNG</button>
+        <button class="btn sm ghost" id="bFull" title="Full-screen stage for live capture (OBS, QuickTime screen recording)">Full-screen stage</button>
+        <span class="count-chip" id="chip">no markers</span>
+      </div>
+    </section>
+    <aside>
+      <div class="step">
+        <h3><b>1</b>Chant audio</h3>
+        <label class="file-line" id="fileLine"><span>🎵</span><span class="nm" id="fileName">Choose audio or video (mp3, wav, m4a, mp4)…</span></label>
+        <input type="file" id="fAudio" accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.mp4,.mov,.flac,.ogg" hidden>
+        <div class="bar" id="anBar"><div></div></div>
+        <div class="note" id="fileNote">Use the same audio as your final video so the counter lines up at 0:00.</div>
+      </div>
+      <div class="step">
+        <h3><b>2</b>Find the chants</h3>
+        <div class="row"><label>How many</label><input type="number" id="nTarget" value="108" min="1" max="10008"><span class="note" style="margin:0">jaaps in this video</span></div>
+        <div class="row"><label>Chanting from</label><input type="text" id="rStart" value="0:00.00" class="grow"><button class="btn sm" id="bStartPH" title="Set to playhead">⇤ playhead</button></div>
+        <div class="row"><label>Chanting until</label><input type="text" id="rEnd" value="0:00.00" class="grow"><button class="btn sm" id="bEndPH" title="Set to playhead">⇥ playhead</button></div>
+        <div class="row"><label>Rhythm</label><span class="note" style="margin:0">free</span><input type="range" id="steady" min="0.2" max="3" step="0.1" value="1" class="grow"><span class="note" style="margin:0">steady</span></div>
+        <div class="row" style="margin-top:12px"><button class="btn primary" id="bDetect" disabled>✦ Detect chants</button><button class="btn" id="bTap" disabled title="Play the audio and tap Space for every chant">Tap along</button><button class="btn sm" id="bSnap" disabled title="Move each marker onto the nearest chant start">Snap</button></div>
+        <div class="note" id="detNote">Detection listens for each repetition and picks exactly the number you set. Orange markers are worth a quick listen.</div>
+      </div>
+      <div class="step">
+        <h3><b>3</b>Look &amp; feel</h3>
+        <div class="row"><label>Mantra text</label><input type="text" id="sMantra" class="grow" placeholder="ॐ नमः शिवाय"></div>
+        <div class="row"><label>Under number</label><select id="sSub" class="grow"><option value="total">/ 108</option><option value="custom">Custom text…</option><option value="none">Nothing</option></select></div>
+        <div class="row" id="subCustomRow" style="display:none"><label>Custom text</label><input type="text" id="sSubText" class="grow" placeholder="जाप संख्या"></div>
+        <div class="row"><label>When complete</label><input type="text" id="sDone" class="grow" placeholder="॥ हरि ॐ ॥"></div>
+        <div class="row"><label>Mala</label></div><div class="themes" id="themes"></div>
+        <div class="row"><label>Numbers</label><select id="sNum" class="grow"><option value="latin">1 2 3 … 108</option><option value="deva">१ २ ३ … १०८</option></select></div>
+        <div class="row"><label>Count moment</label><select id="sCountAt" class="grow"><option value="start">As each chant begins</option><option value="end">As each chant finishes</option></select></div>
+        <div class="row"><label>Timing nudge</label><input type="range" id="sOffset" min="-600" max="600" step="10" value="0" class="grow"><span class="note" style="margin:0;min-width:52px;text-align:right" id="offLbl">0 ms</span></div>
+        <div class="row"><label>Motion</label><select id="sRotate" class="grow"><option value="0">Still mala, pointer travels</option><option value="1">Turning mala, like beads in hand</option></select></div>
+        <div class="row"><label>Extras</label><span class="chk"><input type="checkbox" id="sPlate" checked>Medallion</span><span class="chk"><input type="checkbox" id="sGlow" checked>Glow</span><span class="chk"><input type="checkbox" id="sSparks" checked>Sparks</span></div>
+        <div class="row"><label>Screen colour</label><div class="swatches" id="swatches"></div><input type="color" id="sBg" value="#00ff00" style="width:34px;height:28px;border:none;background:none;padding:0"></div>
+        <div class="note" id="keyNote">Medallion on = clean keying: glows sit on the disc, so only a crisp circle edge touches the green.</div>
+      </div>
+      <div class="step">
+        <h3><b>4</b>Export</h3>
+        <div class="row"><label>Size</label><select id="eSize" class="grow"><option value="720">720 × 720</option><option value="1080" selected>1080 × 1080</option><option value="1440">1440 × 1440</option><option value="2160">2160 × 2160 (4K)</option></select></div>
+        <div class="row"><label>Frame rate</label><select id="eFps" class="grow"><option>25</option><option selected>30</option><option>60</option></select></div>
+        <div class="row"><label></label><span class="chk"><input type="checkbox" id="eAudio" checked>Include the chant audio (handy for lining up)</span></div>
+        <div class="row" style="margin-top:12px"><button class="btn primary" id="bExport" disabled>⬇ Export MP4</button><button class="btn" id="bCancel" style="display:none">Cancel</button></div>
+        <div class="bar" id="exBar"><div></div></div>
+        <div class="note" id="exNote">The video runs the full length of your audio, from 0:00.</div>
+      </div>
+    </aside>
+  </main>
+  <section class="tl">
+    <div class="tl-bar">
+      <button class="btn sm" id="zFit">Fit</button>
+      <button class="btn sm" id="zIn">＋</button>
+      <button class="btn sm" id="zOut">－</button>
+      <button class="btn sm" id="bAddM" disabled>+ Marker at playhead</button>
+      <button class="btn sm" id="bDelM" disabled>Delete marker</button>
+      <button class="btn sm" id="bUndo" disabled>Undo</button>
+      <span class="help"><kbd>Space</kbd> play · click = seek · drag marker to move · double-click = add · <kbd>⌫</kbd> delete · <kbd>←</kbd><kbd>→</kbd> nudge · <kbd>,</kbd><kbd>.</kbd> prev/next · scroll = zoom</span>
+    </div>
+    <canvas id="tl"></canvas>
+  </section>
+</div>
+<div class="modal" id="help"><div class="card">
+  <h2>How it works</h2>
+  <ol>
+    <li><b>Drop your chant audio</b> (or the video itself). It is analysed right here on your Mac; nothing is uploaded.</li>
+    <li><b>Detect chants.</b> Set how many jaaps (108) and, if there is an intro or outro, where the chanting starts and ends. The detector learns what one repetition sounds like and places exactly that many markers.</li>
+    <li><b>Check the timeline.</b> Orange markers are less certain. Press <kbd>,</kbd> / <kbd>.</kbd> to hop between markers, drag to fix, double-click to add, <kbd>⌫</kbd> to delete. If a recording is tricky, use <b>Tap along</b> and press Space at every chant, then <b>Snap</b> to tighten the taps.</li>
+    <li><b>Style it</b>: mantra text, mala type, Devanagari numbers, still or turning mala.</li>
+    <li><b>Export MP4</b> and drop it on a track above your video at 0:00 in Final Cut / iMovie / Premiere / DaVinci. Apply a green-screen (chroma) key, scale it down to a corner.</li>
+  </ol>
+  <p class="note">Your markers are remembered per audio file, and your style is remembered for next time. Use <b>Save project</b> to keep a copy you can reopen.</p>
+  <div style="text-align:right;margin-top:14px"><button class="btn primary" id="bHelpClose">Got it</button></div>
+</div></div>
+<script>/*__MUXER__*/</script>
+<script>/*__DETECT__*/</script>
+<script>/*__RENDER__*/</script>
+<script>/*__APP__*/</script>
+</body>
+</html>
